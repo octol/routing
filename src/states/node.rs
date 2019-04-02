@@ -301,9 +301,9 @@ impl Node {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.valid_peers().len()
+                self.chain.valid_peers(true).len()
             );
-            let network_estimate = match self.routing_table().network_size_estimate() {
+            let network_estimate = match self.chain().network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
                 (n, false) => format!("Estimated network size: {}", n),
             };
@@ -808,7 +808,7 @@ impl Node {
         let sibling_pfx = self.our_prefix().sibling();
         if self.chain.is_self_merge_ready() && self.chain.other_prefixes().contains(&sibling_pfx) {
             let payload = *self.chain.our_info().hash();
-            let src = Authority::PrefixSection(*self.our_prefix());
+            let src = Authority::PrefixSection(self.our_prefix());
             let dst = Authority::PrefixSection(sibling_pfx);
             let content = MessageContent::Merge(payload);
             if let Err(err) = self.send_routing_message(src, dst, content) {
@@ -952,7 +952,7 @@ impl Node {
 
         let peers_to_connect: BTreeSet<PublicId> = self
             .chain
-            .valid_peers()
+            .valid_peers(true)
             .iter()
             .filter_map(|pub_id| {
                 if self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id() {
@@ -1497,8 +1497,7 @@ impl Node {
                 .iter()
                 .cloned()
                 .collect();
-            let first_info =
-                SectionInfo::new(our_members, *self.routing_table().our_prefix(), None)?;
+            let first_info = SectionInfo::new(our_members, Default::default(), None)?;
             self.gen_pfx_info = Some(GenesisPfxInfo {
                 our_info: first_info,
                 latest_info: Default::default(),
@@ -1921,13 +1920,13 @@ impl Node {
         }
 
         if (peer_kind == CrustUser::Client || !self.is_first_node)
-            && self.routing_table().len() < self.min_section_size() - 1
+            && self.chain().len() < self.min_section_size() - 1
         {
             debug!(
                 "{} Client {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_id,
-                self.routing_table().len(),
+                self.chain().len(),
                 self.min_section_size() - 1
             );
             self.send_direct_message(
@@ -1986,7 +1985,7 @@ impl Node {
         } else {
             (
                 RESOURCE_PROOF_DIFFICULTY,
-                RESOURCE_PROOF_TARGET_SIZE / (self.routing_table().our_section().len() + 1),
+                RESOURCE_PROOF_TARGET_SIZE / (self.chain().our_section().len() + 1),
             )
         };
         let seed: Vec<u8> = if cfg!(feature = "mock") {
@@ -2418,10 +2417,15 @@ impl Node {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_section = match self.routing_table().close_names(&dst_name) {
-            Some(close_section) => close_section.into_iter().collect(),
-            None => return Err(RoutingError::InvalidDestination),
+        let close_section = if self.is_first_node && !self.chain.is_member() {
+            iter::once(self.name()).cloned().collect_vec()
+        } else {
+            match self.chain().close_names(&dst_name) {
+                Some(close_section) => close_section.into_iter().collect(),
+                None => return Err(RoutingError::InvalidDestination),
+            }
         };
+
         let relocation_dst = self
             .next_relocation_dst
             .unwrap_or_else(|| utils::calculate_relocation_dst(close_section, &dst_name));
@@ -2459,7 +2463,7 @@ impl Node {
 
         // Check that our section is one of the ones with a minimum length prefix, and if it's not,
         // forward it to one that is.
-        let min_len_prefix = self.routing_table().min_len_prefix();
+        let min_len_prefix = self.chain().min_len_prefix();
 
         // If we're running in mock-crust mode, and we have relocation interval, don't try to do
         // section balancing, as it will break things.
@@ -2469,7 +2473,7 @@ impl Node {
             false
         };
 
-        if &min_len_prefix != self.our_prefix() && !forbid_join_balancing {
+        if min_len_prefix != self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {
                 old_public_id: old_pub_id,
                 old_client_auth: old_client_auth,
@@ -2481,10 +2485,7 @@ impl Node {
         }
 
         let target_interval = self.next_relocation_interval.take().unwrap_or_else(|| {
-            utils::calculate_relocation_interval(
-                self.our_prefix(),
-                self.routing_table().our_section(),
-            )
+            utils::calculate_relocation_interval(&self.our_prefix(), &self.chain().our_section())
         });
 
         self.peer_mgr.expect_candidate(old_pub_id)?;
@@ -3028,34 +3029,43 @@ impl Node {
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
         use crate::Authority::*;
-        let list: Vec<&XorName> = match *src {
+        let (our_section, valid_peers) = if self.chain().is_member() {
+            // FIXME: we're passing false here to valid peers to not include
+            // recently accepted peers which would affect quorum calculation.
+            // This even when going via RT would have only allowed route-0
+            // to succeed as by ack-failure, the new node would have been
+            // accepted to the RT. Need a better network startup separation.
+            (self.chain().our_section(), self.chain().valid_peers(false))
+        } else {
+            let our_section: BTreeSet<XorName> = iter::once(self.name()).cloned().collect();
+            let valid_peers: BTreeSet<&PublicId> = iter::once(self.id()).collect();
+            (our_section, valid_peers)
+        };
+        let list: Vec<XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                let mut v = self
-                    .routing_table()
-                    .our_section()
-                    .iter()
-                    .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs));
+                let mut v = our_section
+                    .into_iter()
+                    .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs));
                 v.truncate(self.min_section_size());
                 v
             }
-            Section(_) => self
-                .routing_table()
-                .our_section()
+            Section(_) => our_section
+                .into_iter()
+                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
+            PrefixSection(_) => valid_peers
                 .iter()
-                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs)),
-            PrefixSection(ref pfx) => self
-                .routing_table()
-                .iter()
-                .filter(|name| pfx.matches(name))
-                .chain(iter::once(self.name()))
-                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs)),
+                .map(|id| id.name())
+                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
+                .into_iter()
+                .cloned()
+                .collect(),
             ManagedNode(_) | Client { .. } => return Some(*self.name()),
         };
 
         if !list.contains(&self.name()) {
             None
         } else {
-            Some(*list[route as usize % list.len()])
+            Some(list[route as usize % list.len()])
         }
     }
 
@@ -3077,9 +3087,18 @@ impl Node {
         };
 
         if (self.is_first_node || self.chain.is_member()) && !force_via_proxy {
+            // TODO: even if having chain reply based on connected_state,
+            // we remove self in targets info and can do same by not
+            // chaining us to conn_peer list here?
+            let conn_peers = self
+                .peer_mgr
+                .connected_peers()
+                .map(Peer::name)
+                .chain(iter::once(self.name()))
+                .collect_vec();
             let targets: BTreeSet<_> = self
-                .routing_table()
-                .targets(&routing_msg.dst, *exclude, route as usize)?
+                .chain()
+                .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -3284,7 +3303,7 @@ impl Node {
             PeerState::Proxy => {
                 debug!("{} Lost bootstrap connection to {:?}.", self, peer);
 
-                if self.routing_table().len() < self.min_section_size() - 1 {
+                if self.chain().len() < self.min_section_size() - 1 {
                     outbox.send_event(Event::Terminate);
                     return false;
                 }
@@ -3372,8 +3391,8 @@ impl Node {
         self.send_message(&dst_id, Message::Direct(direct_message));
     }
 
-    fn our_prefix(&self) -> &Prefix<XorName> {
-        self.routing_table().our_prefix()
+    fn our_prefix(&self) -> Prefix<XorName> {
+        self.chain().our_prefix_copy()
     }
 
     // While this can theoretically be called as a result of a misbehaving client or node, we're
@@ -3405,15 +3424,25 @@ impl Base for Node {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {
+            let conn_peers = self
+                .peer_mgr
+                .connected_peers()
+                .map(Peer::name)
+                .chain(iter::once(self.name()))
+                .collect_vec();
             (self.is_first_node || self.chain.is_member())
-                && self.routing_table().in_authority(auth)
+                && self.chain().in_authority(auth, &conn_peers, self.name())
         }
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.routing_table()
-            .closest_names(&name, count)
-            .map(|names| names.into_iter().cloned().collect_vec())
+        let conn_peers = self
+            .peer_mgr
+            .connected_peers()
+            .map(Peer::name)
+            .chain(iter::once(self.name()))
+            .collect_vec();
+        self.chain().closest_names(&name, count, &conn_peers)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
