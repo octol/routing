@@ -30,9 +30,7 @@ use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{
-    Authority, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable,
-};
+use crate::routing_table::{Authority, Prefix, RemovalDetails, RoutingTable, Xorable};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
@@ -848,21 +846,16 @@ impl Node {
 
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
-            // FIXME - remove version from being a requirement here
-            let our_ver_pfx = self.routing_table().our_versioned_prefix();
-            self.handle_section_split(our_ver_pfx, outbox)?;
+
+            outbox.send_event(Event::SectionSplit(*sec_info.prefix()));
             self.send_neighbour_infos();
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
-            let _ = self.peer_mgr.add_prefix(sec_info.prefix().with_version(0));
             outbox.send_event(Event::SectionMerge(*sec_info.prefix()));
         }
 
         let our_name = *self.full_id.public_id().name();
         let self_sec_update = sec_info.prefix().matches(&our_name);
-        if !self_sec_update {
-            self.handle_section_update(sec_info.prefix().with_version(0));
-        }
 
         if self.chain.is_member() {
             self.update_peer_states(outbox);
@@ -2545,49 +2538,6 @@ impl Node {
         );
 
         self.send_routing_message(relocation_dst, old_client_auth, response_content)
-    }
-
-    fn handle_section_update(&mut self, ver_pfx: VersionedPrefix<XorName>) {
-        trace!("{} Got section update for {:?}", self, ver_pfx);
-
-        let old_prefixes = self.chain.prefixes();
-        // Perform splits that we missed, according to the section update.
-        for pub_id in self.peer_mgr.add_prefix(ver_pfx) {
-            self.disconnect_peer(&pub_id);
-        }
-
-        let new_prefixes = self.chain.prefixes();
-        if old_prefixes != new_prefixes {
-            info!(
-                "{} section update handled. Prefixes: {:?}",
-                self, new_prefixes
-            );
-        }
-    }
-
-    fn handle_section_split(
-        &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        // None of the `peers_to_drop` will have been in our section, so no need to notify Routing
-        // user about them.
-        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_section(ver_pfx);
-        if let Some(new_prefix) = our_new_prefix {
-            outbox.send_event(Event::SectionSplit(new_prefix));
-        }
-
-        for pub_id in peers_to_drop {
-            self.disconnect_peer(&pub_id);
-        }
-        info!(
-            "{} Section split for {:?} completed. Prefixes: {:?}",
-            self,
-            ver_pfx,
-            self.chain.prefixes()
-        );
-
-        Ok(())
     }
 
     /// Votes for all of the proving sections that are new to us.

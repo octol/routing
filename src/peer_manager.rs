@@ -715,47 +715,6 @@ impl PeerManager {
         self.peers.values().filter(|peer| peer.is_connected())
     }
 
-    /// Splits the indicated section and returns the `PublicId`s of any peers to which we should not
-    /// remain connected.
-    pub fn split_section(
-        &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
-    ) -> (Vec<PublicId>, Option<Prefix<XorName>>) {
-        let (names_to_drop, our_new_prefix) = self.routing_table.split(ver_pfx);
-        for name in &names_to_drop {
-            info!("{} Dropped {} from the routing table.", self, name);
-        }
-
-        let mut ids_to_drop = names_to_drop
-            .iter()
-            .filter_map(|name| self.get_peer_by_name(name))
-            .map(Peer::pub_id)
-            .cloned()
-            .collect_vec();
-
-        let remove_candidate = match self.candidate {
-            Candidate::None
-            | Candidate::Expecting { .. }
-            | Candidate::AcceptedForResourceProof { .. } => None,
-            Candidate::ResourceProof { ref new_pub_id, .. } => {
-                if !self.routing_table.our_prefix().matches(new_pub_id.name()) {
-                    Some(*new_pub_id)
-                } else {
-                    None
-                }
-            }
-        };
-
-        ids_to_drop = ids_to_drop
-            .into_iter()
-            .chain(remove_candidate.iter().cloned())
-            .collect_vec();
-
-        let ids_to_drop = self.remove_split_peers(ids_to_drop);
-
-        (ids_to_drop, our_new_prefix)
-    }
-
     /// Adds the given prefix to the routing table, splitting or merging them as necessary. Returns
     /// the list of peers that have been dropped and need to be disconnected.
     pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<XorName>) -> Vec<PublicId> {
