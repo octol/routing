@@ -1298,11 +1298,6 @@ impl Chain {
 
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
-        let our_pfx = if self.our_infos.is_empty() {
-            Default::default()
-        } else {
-            *self.our_prefix()
-        };
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
@@ -1312,8 +1307,8 @@ impl Chain {
             | Authority::NodeManager(ref name) => {
                 self.is_closest(name, self.min_sec_size, connected_peers)
             }
-            Authority::Section(ref name) => our_pfx.matches(name),
-            Authority::PrefixSection(ref prefix) => our_pfx.is_compatible(prefix),
+            Authority::Section(ref name) => self.our_prefix().matches(name),
+            Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
     }
 
