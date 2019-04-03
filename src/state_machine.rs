@@ -189,13 +189,6 @@ impl State {
         }
     }
 
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        match *self {
-            State::Node(ref state) => state.has_unnormalised_routing_conn(excludes),
-            _ => false,
-        }
-    }
-
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
         match *self {
             State::Node(ref state) => Some(state.get_clients_usage()),

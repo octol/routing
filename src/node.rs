@@ -601,17 +601,6 @@ impl Node {
             .set_next_relocation_interval(interval)
     }
 
-    /// Normalisation of routing connection means converting the
-    /// `PeerState::Routing(RoutingConnnection::Proxy)` or
-    /// `PeerState::Routing(RoutingConnnection::JoiningNode)` to
-    /// `PeerState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
-    /// have elapsed for the peer with whom we have the connection.
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        self.machine
-            .current()
-            .has_unnormalised_routing_conn(excludes)
-    }
-
     /// Get the rate limiter's bandwidth usage map.
     pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
         unwrap!(self.machine.current().get_clients_usage())

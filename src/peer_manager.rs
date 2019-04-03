@@ -10,8 +10,7 @@ use crate::crust::CrustUser;
 use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, RemovalDetails, RoutingTable};
+use crate::routing_table::Authority;
 use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use crate::types::MessageId;
 use crate::xor_name::XorName;
@@ -353,7 +352,6 @@ struct ResourceProofChallenge {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peers: BTreeMap<PublicId, Peer>,
-    routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     candidate: Candidate,
     disable_client_rate_limiter: bool,
@@ -362,15 +360,10 @@ pub struct PeerManager {
 
 impl PeerManager {
     /// Returns a new peer manager with no entries.
-    pub fn new(
-        min_section_size: usize,
-        our_public_id: PublicId,
-        disable_client_rate_limiter: bool,
-    ) -> PeerManager {
+    pub fn new(our_public_id: PublicId, disable_client_rate_limiter: bool) -> PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peers: BTreeMap::new(),
-            routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
             our_public_id: our_public_id,
             candidate: Candidate::None,
             disable_client_rate_limiter: disable_client_rate_limiter,
@@ -481,10 +474,9 @@ impl PeerManager {
             } => {
                 info!(
                     "{} Candidate {} has not passed our resource proof challenge in time. Not \
-                     sending approval vote to our section with {:?}",
+                     sending approval vote to our section.",
                     self,
-                    new_pub_id.name(),
-                    self.routing_table.our_prefix()
+                    new_pub_id.name()
                 );
                 return Err(RoutingError::UnknownCandidate);
             }
@@ -676,11 +668,6 @@ impl PeerManager {
             }
         };
 
-        let res = match self.routing_table.add(*pub_id.name()) {
-            res @ Ok(_) | res @ Err(RoutingTableError::AlreadyExists) => res,
-            Err(e) => return Err(e.into()),
-        };
-
         match peer.state {
             PeerState::Routing(cur_conn) if cur_conn == conn => (),
             _ => {
@@ -688,7 +675,6 @@ impl PeerManager {
                 trace!("{} Set {} to {:?}", self_display, pub_id, peer.state);
             }
         }
-        res?;
         Ok(())
     }
 
@@ -1071,10 +1057,7 @@ impl PeerManager {
 
     /// Removes the given entry, returns the removed peer and if it was a routing node,
     /// the removal details
-    pub fn remove_peer(
-        &mut self,
-        pub_id: &PublicId,
-    ) -> Option<(Peer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
+    pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
             Candidate::Expecting { ref old_pub_id, .. }
@@ -1090,12 +1073,7 @@ impl PeerManager {
             self.candidate = Candidate::None;
         }
 
-        if let Some(peer) = self.peers.remove(pub_id) {
-            let removal_details = self.routing_table.remove(peer.name());
-            Some((peer, removal_details))
-        } else {
-            None
-        }
+        self.peers.remove(pub_id).is_some() || remove_candidate
     }
 
     /// Sets this peer as established.
@@ -1108,40 +1086,12 @@ impl PeerManager {
     pub fn is_established(&self) -> bool {
         self.established
     }
-
-    #[cfg(feature = "mock")]
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        let unnormalised_routing_conns: BTreeSet<XorName> = self
-            .routing_table
-            .our_section()
-            .iter()
-            .filter(|name| {
-                if let Some(peer) = self.get_peer_by_name(name) {
-                    match peer.state {
-                        PeerState::Routing(RoutingConnection::JoiningNode(_))
-                        | PeerState::Routing(RoutingConnection::Proxy(_)) => {
-                            return true;
-                        }
-                        _ => return false,
-                    }
-                } else {
-                    false
-                }
-            })
-            .cloned()
-            .collect();
-        !(&unnormalised_routing_conns - excludes).is_empty()
-    }
 }
 
 impl fmt::Display for PeerManager {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "Node({}({:b}))",
-            self.routing_table.our_name(),
-            self.routing_table.our_prefix()
-        )
+        // FIXME: needs Prefix from Chain
+        write!(formatter, "Node({})", self.our_public_id.name())
     }
 }
 
@@ -1161,10 +1111,9 @@ mod tests {
 
     #[test]
     pub fn connection_info_prepare_receive() {
-        let min_section_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
+        let mut peer_mgr = PeerManager::new(our_pub_id, false);
 
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
@@ -1214,10 +1163,9 @@ mod tests {
 
     #[test]
     pub fn connection_info_receive_prepare() {
-        let min_section_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
+        let mut peer_mgr = PeerManager::new(our_pub_id, false);
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
             endpoint: Endpoint(0),

@@ -226,11 +226,7 @@ impl Node {
             full_id: new_full_id,
             is_first_node: first_node,
             msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(
-                min_section_size,
-                public_id,
-                dev_config.disable_client_rate_limiter,
-            ),
+            peer_mgr: PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
@@ -3355,10 +3351,6 @@ impl Node {
 
     pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
         self.next_relocation_interval = interval;
-    }
-
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        self.peer_mgr.has_unnormalised_routing_conn(excludes)
     }
 
     pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
