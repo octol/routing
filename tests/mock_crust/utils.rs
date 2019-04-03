@@ -14,8 +14,7 @@ use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
 use routing::{verify_chain_invariant, Chain};
 use routing::{
     Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream, FullId,
-    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable, XorName,
-    Xorable,
+    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, XorName, Xorable,
 };
 use std::cell::RefCell;
 use std::cmp;
@@ -151,10 +150,6 @@ impl TestNode {
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
         unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
-    }
-
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        unwrap!(self.inner.routing_table())
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
