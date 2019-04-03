@@ -20,7 +20,7 @@ use crate::messages::{
     RELOCATE_PRIORITY,
 };
 use crate::outbox::{EventBox, EventBuf};
-use crate::routing_table::{Authority, RoutingTable};
+use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
 use crate::states::{self, Bootstrapping, BootstrappingTargetState};
 use crate::types::{MessageId, RoutingActionSender};
@@ -516,11 +516,6 @@ impl Node {
     /// Returns the `PublicId` of this node.
     pub fn id(&self) -> Result<PublicId, RoutingError> {
         self.machine.id().ok_or(RoutingError::Terminated)
-    }
-
-    /// Returns the routing table of this node.
-    pub fn routing_table(&self) -> Result<&RoutingTable<XorName>, RoutingError> {
-        self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
     /// Returns the chain for this node.

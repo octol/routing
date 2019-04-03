@@ -13,7 +13,7 @@ use crate::mock_crust;
 use crate::outbox::EventBox;
 #[cfg(feature = "mock")]
 use crate::routing_table::Authority;
-use crate::routing_table::{Prefix, RoutingTable};
+use crate::routing_table::Prefix;
 use crate::states::common::Base;
 #[cfg(feature = "mock")]
 use crate::states::common::Bootstrapped;
@@ -108,13 +108,6 @@ impl State {
 
     fn id(&self) -> Option<PublicId> {
         self.base_state().map(|state| *state.id())
-    }
-
-    fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
-        match *self {
-            State::Node(ref state) => Some(state.routing_table()),
-            _ => None,
-        }
     }
 
     #[cfg(feature = "mock")]
@@ -530,10 +523,6 @@ impl StateMachine {
 
     pub fn id(&self) -> Option<PublicId> {
         self.state.id()
-    }
-
-    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
-        self.state.routing_table()
     }
 
     #[cfg(feature = "mock")]

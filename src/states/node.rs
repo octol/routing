@@ -30,7 +30,7 @@ use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, Prefix, RoutingTable, Xorable};
+use crate::routing_table::{Authority, Prefix, Xorable};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
@@ -418,11 +418,6 @@ impl Node {
 
         self.handle_routing_messages(outbox);
         Transition::Stay
-    }
-
-    /// Routing table of this node.
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        self.peer_mgr.routing_table()
     }
 
     /// Routing table of this node.
@@ -2083,10 +2078,7 @@ impl Node {
 
         if self.notified_nodes.insert(*pub_id) {
             info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(
-                *pub_id.name(),
-                self.routing_table().clone(),
-            ));
+            outbox.send_event(Event::NodeAdded(*pub_id.name()));
             self.print_rt_size();
         }
     }
@@ -3202,10 +3194,7 @@ impl Node {
 
         if self.chain.is_member() && self.notified_nodes.remove(pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
-            outbox.send_event(Event::NodeLost(
-                *pub_id.name(),
-                self.routing_table().clone(),
-            ));
+            outbox.send_event(Event::NodeLost(*pub_id.name()));
 
             if self.chain().our_info().members().contains(pub_id) {
                 self.vote_for_event(NetworkEvent::Offline(*pub_id));

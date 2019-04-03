@@ -378,11 +378,6 @@ impl PeerManager {
         }
     }
 
-    /// Returns the routing table.
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        &self.routing_table
-    }
-
     /// Upgrades a `Bootstrapper` to a `Client` or `JoiningNode`.
     pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId) {
         if let Some(peer) = self.peers.get_mut(pub_id) {
