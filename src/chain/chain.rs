@@ -1297,12 +1297,7 @@ impl Chain {
     }
 
     /// Returns whether we are a part of the given authority.
-    pub fn in_authority(
-        &self,
-        auth: &Authority<XorName>,
-        connected_peers: &[&XorName],
-        our_name: &XorName,
-    ) -> bool {
+    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
         let our_pfx = if self.our_infos.is_empty() {
             Default::default()
         } else {
@@ -1311,7 +1306,7 @@ impl Chain {
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
-            Authority::ManagedNode(ref name) => our_name == name,
+            Authority::ManagedNode(ref name) => self.our_id().name() == name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name) => {

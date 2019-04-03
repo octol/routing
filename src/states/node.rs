@@ -3431,7 +3431,7 @@ impl Base for Node {
                 .chain(iter::once(self.name()))
                 .collect_vec();
             (self.is_first_node || self.chain.is_member())
-                && self.chain().in_authority(auth, &conn_peers, self.name())
+                && self.chain().in_authority(auth, &conn_peers)
         }
     }
 
