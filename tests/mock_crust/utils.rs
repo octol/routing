@@ -150,7 +150,7 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
-        unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
+        unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
     }
 
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
@@ -158,7 +158,7 @@ impl TestNode {
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.routing_table().our_prefix()
+        self.chain().our_prefix()
     }
 
     pub fn chain(&self) -> &Chain {
@@ -166,17 +166,15 @@ impl TestNode {
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
-        self.inner
-            .routing_table()
-            .ok()
-            .map_or(false, |rt| rt.in_authority(dst))
+        self.inner.in_authority(dst)
     }
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
     nodes
         .iter()
-        .filter_map(|n| n.inner.routing_table().ok().map(RoutingTable::our_prefix))
+        .filter_map(|n| n.inner.chain().ok())
+        .flat_map(|chain| chain.prefixes())
         .unique()
         .count()
 }
@@ -533,14 +531,14 @@ pub fn add_connected_nodes_until_split(
         // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
         // `nodes` when calling this function.
         assert!(
-            num_in_section <= nodes[0].routing_table().min_split_size(),
+            num_in_section <= nodes[0].chain().min_split_size(),
             "The existing nodes' names disallow creation of the requested prefixes. There \
              are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
             num_in_section,
             prefix,
-            nodes[0].routing_table().min_split_size()
+            nodes[0].chain().min_split_size()
         );
-        let min_split_size = nodes[0].routing_table().min_split_size() - num_in_section;
+        let min_split_size = nodes[0].chain().min_split_size() - num_in_section;
         for _ in 0..min_split_size {
             add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
@@ -555,7 +553,7 @@ pub fn add_connected_nodes_until_split(
     loop {
         let mut found_prefix = None;
         for node in nodes.iter() {
-            if let Some(prefix_to_split) = unwrap!(node.inner.routing_table())
+            if let Some(prefix_to_split) = unwrap!(node.inner.chain())
                 .prefixes()
                 .iter()
                 .find(|&prefix| !prefixes.contains(prefix))
@@ -588,7 +586,7 @@ pub fn add_connected_nodes_until_split(
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in nodes.iter() {
-        actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
+        actual_prefixes.append(&mut unwrap!(node.inner.chain()).prefixes());
     }
     assert_eq!(
         prefixes.iter().cloned().collect::<BTreeSet<_>>(),
@@ -754,7 +752,7 @@ fn add_node_to_section<T: Rng>(
     );
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert!(prefix.matches(nodes[nodes.len() - 1].routing_table().our_name(),));
+    assert!(prefix.matches(&nodes[nodes.len() - 1].name()));
 }
 
 mod tests {
