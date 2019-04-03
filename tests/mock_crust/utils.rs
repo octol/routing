@@ -13,9 +13,9 @@ use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
 use routing::{verify_chain_invariant, Chain};
 use routing::{
-    verify_network_invariant, Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event,
-    EventStream, FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
-    RoutingTable, XorName, Xorable,
+    Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream, FullId,
+    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable, XorName,
+    Xorable,
 };
 use std::cell::RefCell;
 use std::cmp;
@@ -655,18 +655,6 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
-    // Validate Chain and RT Prefixes are in sync.
-    for node in nodes.iter() {
-        assert_eq!(
-            node.routing_table().prefixes(),
-            node.chain().prefixes(),
-            "Node {} has prefixes not in sync between RT and Chain.",
-            node.name()
-        );
-    }
-
-    // Verify RT and Chain invariants
-    verify_network_invariant(nodes.iter().map(|n| n.routing_table()));
     let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
     verify_chain_invariant(nodes.iter().map(|n| n.chain()), min_section_size);
 
@@ -680,8 +668,6 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
         {
             assert_eq!(true, node.inner.is_routing_peer(pub_id));
         }
-
-        node.inner.purge_invalid_rt_entry();
     }
 }
 
