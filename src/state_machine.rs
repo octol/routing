@@ -11,6 +11,8 @@ use crate::id::{FullId, PublicId};
 #[cfg(feature = "mock")]
 use crate::mock_crust;
 use crate::outbox::EventBox;
+#[cfg(feature = "mock")]
+use crate::routing_table::Authority;
 use crate::routing_table::{Prefix, RoutingTable};
 use crate::states::common::Base;
 #[cfg(feature = "mock")]
@@ -224,6 +226,15 @@ impl State {
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
         match *self {
             State::Node(ref state) => state.is_routing_peer(pub_id),
+            _ => false,
+        }
+    }
+
+    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+        match *self {
+            State::Node(ref state) => state.in_authority(auth),
+            State::Client(ref state) => state.in_authority(auth),
+            State::JoiningNode(ref state) => state.in_authority(auth),
             _ => false,
         }
     }
