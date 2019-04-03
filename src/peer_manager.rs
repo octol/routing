@@ -11,7 +11,7 @@ use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, Prefix, RemovalDetails, RoutingTable, VersionedPrefix};
+use crate::routing_table::{Authority, RemovalDetails, RoutingTable};
 use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use crate::types::MessageId;
 use crate::xor_name::XorName;
@@ -430,18 +430,12 @@ impl PeerManager {
         &mut self,
         old_pub_id: PublicId,
         target_interval: (XorName, XorName),
-    ) -> (Prefix<XorName>, BTreeSet<PublicId>) {
+    ) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             old_pub_id: old_pub_id,
             target_interval: target_interval,
         };
-
-        let our_section = self.routing_table.our_section().iter().cloned().collect();
-        (
-            *self.routing_table.our_prefix(),
-            self.get_pub_ids(&our_section),
-        )
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
@@ -713,24 +707,6 @@ impl PeerManager {
     /// Returns an iterator over all connected peers.
     pub fn connected_peers(&self) -> impl Iterator<Item = &Peer> {
         self.peers.values().filter(|peer| peer.is_connected())
-    }
-
-    /// Adds the given prefix to the routing table, splitting or merging them as necessary. Returns
-    /// the list of peers that have been dropped and need to be disconnected.
-    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<XorName>) -> Vec<PublicId> {
-        let names_to_drop = self.routing_table.add_prefix(ver_pfx);
-        for name in &names_to_drop {
-            info!("{} Dropped {} from the routing table.", self, name);
-        }
-
-        let ids_to_drop = names_to_drop
-            .iter()
-            .filter_map(|name| self.get_peer_by_name(name))
-            .map(Peer::pub_id)
-            .cloned()
-            .collect_vec();
-
-        self.remove_split_peers(ids_to_drop)
     }
 
     /// Returns if the given peer is our proxy node.
@@ -1209,60 +1185,6 @@ impl PeerManager {
     /// Returns whether this peer is established.
     pub fn is_established(&self) -> bool {
         self.established
-    }
-    /// Removes the peer with the given IDs if present, and returns such `PublicId`s.
-    /// If the peer is also our proxy, or we are theirs, it is reinserted as proxy or joining node.
-    fn remove_split_peers(&mut self, ids: Vec<PublicId>) -> Vec<PublicId> {
-        ids.iter()
-            .filter_map(|id| {
-                let mut peer = match self.remove_peer(id) {
-                    Some((peer, Ok(_))) => {
-                        log_or_panic!(
-                            LogLevel::Error,
-                            "{} RT split peer has returned removal detail.",
-                            self
-                        );
-                        peer
-                    }
-                    Some((peer, Err(RoutingTableError::NoSuchPeer))) => peer,
-                    _ => return None,
-                };
-
-                match peer {
-                    Peer {
-                        state: PeerState::Routing(RoutingConnection::JoiningNode(_)),
-                        ..
-                    }
-                    | Peer {
-                        state: PeerState::Candidate(RoutingConnection::JoiningNode(_)),
-                        ..
-                    } => {
-                        debug!(
-                            "{} Still the Proxy of {}, re-insert peer as JoiningNode",
-                            self,
-                            id.name()
-                        );
-                        peer.state = PeerState::JoiningNode;
-                        self.insert_peer(peer);
-                        None
-                    }
-                    Peer {
-                        state: PeerState::Routing(RoutingConnection::Proxy(_)),
-                        ..
-                    } => {
-                        debug!(
-                            "{} Still the JoiningNode of {}, re-insert peer as Proxy",
-                            self,
-                            id.name()
-                        );
-                        peer.state = PeerState::Proxy;
-                        self.insert_peer(peer);
-                        None
-                    }
-                    Peer { pub_id, .. } => Some(pub_id),
-                }
-            })
-            .collect()
     }
 
     #[cfg(feature = "mock")]

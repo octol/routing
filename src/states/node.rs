@@ -127,6 +127,8 @@ pub struct Node {
     // Peers we want to try reconnecting to
     reconnect_peers: Vec<PublicId>,
     reconnect_peers_token: u64,
+    // TODO: notify without local state
+    notified_nodes: BTreeSet<PublicId>,
 }
 
 impl Node {
@@ -256,6 +258,7 @@ impl Node {
             chain: Chain::with_id_and_min_sec_size(public_id, min_section_size),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
+            notified_nodes: Default::default(),
         }
     }
 
@@ -1495,6 +1498,9 @@ impl Node {
                 our_info: first_info,
                 latest_info: Default::default(),
             });
+
+            // Maybe fire this right on startup for first node when its established.
+            outbox.send_event(Event::Connected);
         }
 
         if let Some(gen_info) = self.gen_pfx_info.clone() {
@@ -1617,12 +1623,6 @@ impl Node {
         if self.init_parsec()? {
             self.init_chain();
         }
-
-        // we shoudnt be having any redundant neighbours at this stage, so ignoring result
-        // of add_prefix here
-        let _ = self
-            .peer_mgr
-            .add_prefix(genesis_info.our_info.prefix().with_version(0));
 
         if !self.is_first_node {
             // consider ourself established if we're the second node
@@ -2071,12 +2071,8 @@ impl Node {
 
     fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
         match self.peer_mgr.add_to_routing_table(pub_id) {
-            Err(RoutingError::RoutingTable(RoutingTableError::AlreadyExists)) => return,
             Err(error) => {
-                debug!(
-                    "{} Peer {:?} was not added to the routing table: {:?}",
-                    self, pub_id, error
-                );
+                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
                 if !self.chain.is_peer_valid(pub_id) {
                     self.disconnect_peer(pub_id);
                 }
@@ -2085,21 +2081,14 @@ impl Node {
             Ok(()) => (),
         }
 
-        info!("{} Added {} to routing table.", self, pub_id);
-        if self.is_first_node && self.routing_table().len() == 1 {
-            trace!(
-                "{} Node approval completed. Prefixes: {:?}",
-                self,
-                self.chain.prefixes()
-            );
-            outbox.send_event(Event::Connected);
+        if self.notified_nodes.insert(*pub_id) {
+            info!("{} Added {} to routing table.", self, pub_id);
+            outbox.send_event(Event::NodeAdded(
+                *pub_id.name(),
+                self.routing_table().clone(),
+            ));
+            self.print_rt_size();
         }
-
-        outbox.send_event(Event::NodeAdded(
-            *pub_id.name(),
-            self.routing_table().clone(),
-        ));
-        self.print_rt_size();
     }
 
     // If `msg_id` is `Some` this is sent as a response, otherwise as a request.
@@ -2370,30 +2359,31 @@ impl Node {
                 self, pub_id
             );
             let _ = self.crust_service.disconnect(pub_id);
-            if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
-                match *peer.state() {
-                    PeerState::Bootstrapper { peer_kind, .. } => {
-                        if peer_kind == CrustUser::Client {
-                            let _ = self.dropped_clients.insert(*pub_id, ());
-                        }
-                    }
-                    PeerState::Client { ip, traffic } => {
-                        info!(
-                            "{} Stats - Client total session traffic from {:?} - {:?}",
-                            self, ip, traffic
-                        );
-                        let _ = self.dropped_clients.insert(*pub_id, ());
-                    }
-                    PeerState::ConnectionInfoPreparing { .. }
-                    | PeerState::ConnectionInfoReady(_)
-                    | PeerState::CrustConnecting
-                    | PeerState::Connected
-                    | PeerState::JoiningNode
-                    | PeerState::Routing(_)
-                    | PeerState::Candidate(_)
-                    | PeerState::Proxy => (),
-                }
-            }
+            let _ = self.peer_mgr.remove_peer(pub_id);
+            // if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
+            //     match *peer.state() {
+            //         PeerState::Bootstrapper { peer_kind, .. } => {
+            //             if peer_kind == CrustUser::Client {
+            //                 let _ = self.dropped_clients.insert(*pub_id, ());
+            //             }
+            //         }
+            //         PeerState::Client { ip, traffic } => {
+            //             info!(
+            //                 "{} Stats - Client total session traffic from {:?} - {:?}",
+            //                 self, ip, traffic
+            //             );
+            //             let _ = self.dropped_clients.insert(*pub_id, ());
+            //         }
+            //         PeerState::ConnectionInfoPreparing { .. }
+            //         | PeerState::ConnectionInfoReady(_)
+            //         | PeerState::CrustConnecting
+            //         | PeerState::Connected
+            //         | PeerState::JoiningNode
+            //         | PeerState::Routing(_)
+            //         | PeerState::Candidate(_)
+            //         | PeerState::Proxy => (),
+            //     }
+            // }
         }
     }
 
@@ -2516,9 +2506,19 @@ impl Node {
                 .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)),
         );
 
-        let own_section = self
-            .peer_mgr
+        self.peer_mgr
             .accept_as_candidate(old_pub_id, target_interval);
+
+        let own_section = if self.chain().is_member() {
+            let our_info = self.chain().our_info();
+            (*our_info.prefix(), our_info.members().clone())
+        } else {
+            //FIXME: do this properly
+            (
+                Default::default(),
+                iter::once(*self.full_id().public_id()).collect::<BTreeSet<PublicId>>(),
+            )
+        };
         let response_content = MessageContent::RelocateResponse {
             target_interval: target_interval,
             section: own_section,
@@ -2936,7 +2936,9 @@ impl Node {
         let priority = signed_msg.priority();
         let is_client = self.peer_mgr.is_client(pub_id);
 
-        let result = if is_client || self.peer_mgr.is_joining_node(pub_id) {
+        // FIXME: Simplify this check to simply see if we're connected and relay to said peer
+        // rather than is Client/JN/Candidate check
+        let result = if self.peer_mgr.is_connected(pub_id) {
             // If the message being relayed is a data response, update the client's
             // rate limit balance to account for the initial over-counting.
             if let Some(&PeerState::Client { ip, .. }) =
@@ -3071,24 +3073,22 @@ impl Node {
             ..
         } = routing_msg.src
         {
-            // We don't have any contacts in our routing table yet. Keep using
-            // the proxy connection until we do.
             if let Some(pub_id) = self
                 .peer_mgr
                 .get_peer_by_name(proxy_node_name)
                 .map(Peer::pub_id)
             {
-                if self.peer_mgr.is_proxy(pub_id) {
+                if self.peer_mgr.is_connected(pub_id) {
                     Ok((BTreeSet::new(), vec![*pub_id]))
                 } else {
-                    error!("{} Peer found in peer manager but not as proxy.", self);
+                    error!(
+                        "{} Unable to find connection to proxy in PeerManager.",
+                        self
+                    );
                     Err(RoutingError::ProxyConnectionNotFound)
                 }
             } else {
-                error!(
-                    "{} Unable to find connection to proxy node in proxy map.",
-                    self
-                );
+                error!("{} Unable to find proxy in PeerManager.", self);
                 Err(RoutingError::ProxyConnectionNotFound)
             }
         } else {
@@ -3224,47 +3224,39 @@ impl Node {
         &mut self,
         pub_id: &PublicId,
         outbox: &mut EventBox,
-        mut try_reconnect: bool,
+        try_reconnect: bool,
     ) -> bool {
-        let (peer, removal_result) = match self.peer_mgr.remove_peer(pub_id) {
-            Some(result) => result,
-            None => return true,
-        };
+        let _ = self.peer_mgr.remove_peer(pub_id);
 
-        if let Ok(removal_details) = removal_result {
-            if !self.dropped_routing_node(removal_details, outbox, Some(*pub_id)) {
+        if self.chain.is_member() && self.notified_nodes.remove(pub_id) {
+            info!("{} Dropped {} from the routing table.", self, pub_id.name());
+            outbox.send_event(Event::NodeLost(
+                *pub_id.name(),
+                self.routing_table().clone(),
+            ));
+
+            if self.chain().our_info().members().contains(pub_id) {
+                self.vote_for_event(NetworkEvent::Offline(*pub_id));
+            }
+        }
+
+        if self
+            .peer_mgr
+            .connected_peers()
+            .filter(|p| p.is_routing())
+            .count()
+            == 0
+        {
+            debug!("{} Lost all routing connections.", self);
+            if !self.is_first_node {
+                outbox.send_event(Event::RestartRequired);
                 return false;
             }
         }
 
-        match *peer.state() {
-            PeerState::Client { ip, traffic } => {
-                debug!("{} Client disconnected: {}", self, pub_id);
-                info!(
-                    "{} Stats - Client total session traffic from {:?} - {:?}",
-                    self, ip, traffic
-                );
-                try_reconnect = false;
-            }
-            PeerState::JoiningNode => {
-                debug!("{} Joining node {} dropped.", self, pub_id);
-                try_reconnect = false;
-            }
-            PeerState::Proxy => {
-                debug!("{} Lost bootstrap connection to {:?}.", self, peer);
-
-                if self.chain().len() < self.min_section_size() - 1 {
-                    outbox.send_event(Event::Terminate);
-                    return false;
-                }
-                try_reconnect = false;
-            }
-            _ => (),
-        }
-
-        if try_reconnect && self.chain.is_member() && self.chain.is_peer_valid(peer.pub_id()) {
-            debug!("{} Caching {:?} to reconnect.", self, peer.pub_id());
-            self.reconnect_peers.push(*peer.pub_id());
+        if try_reconnect && self.chain.is_member() && self.chain.is_peer_valid(pub_id) {
+            debug!("{} Caching {:?} to reconnect.", self, pub_id);
+            self.reconnect_peers.push(*pub_id);
         }
 
         true
