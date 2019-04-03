@@ -1337,7 +1337,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = (self.len() + 1) as f64 / network_fraction;
+        let network_size = self.valid_peers(true).len() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }
