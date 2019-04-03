@@ -22,6 +22,7 @@ use super::{
 use crate::error::RoutingError;
 use crate::id::{FullId, PublicId};
 use crate::messages::SignedMessage;
+use crate::routing_table::DEFAULT_PREFIX;
 use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
@@ -456,16 +457,10 @@ impl Chain {
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.our_info().prefix()
-    }
-
-    /// Returns our own current section's prefix.
-    // FIXME: this is a ugly workaround for now.
-    pub fn our_prefix_copy(&self) -> Prefix<XorName> {
         if self.our_infos.is_empty() {
-            Default::default()
+            &DEFAULT_PREFIX
         } else {
-            *self.our_info().prefix()
+            self.our_info().prefix()
         }
     }
 

@@ -808,7 +808,7 @@ impl Node {
         let sibling_pfx = self.our_prefix().sibling();
         if self.chain.is_self_merge_ready() && self.chain.other_prefixes().contains(&sibling_pfx) {
             let payload = *self.chain.our_info().hash();
-            let src = Authority::PrefixSection(self.our_prefix());
+            let src = Authority::PrefixSection(*self.our_prefix());
             let dst = Authority::PrefixSection(sibling_pfx);
             let content = MessageContent::Merge(payload);
             if let Err(err) = self.send_routing_message(src, dst, content) {
@@ -2473,7 +2473,7 @@ impl Node {
             false
         };
 
-        if min_len_prefix != self.our_prefix() && !forbid_join_balancing {
+        if min_len_prefix != *self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {
                 old_public_id: old_pub_id,
                 old_client_auth: old_client_auth,
@@ -3391,8 +3391,8 @@ impl Node {
         self.send_message(&dst_id, Message::Direct(direct_message));
     }
 
-    fn our_prefix(&self) -> Prefix<XorName> {
-        self.chain().our_prefix_copy()
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain().our_prefix()
     }
 
     // While this can theoretically be called as a result of a misbehaving client or node, we're
