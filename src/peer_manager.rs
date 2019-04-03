@@ -237,7 +237,7 @@ impl Peer {
     /// Returns whether the peer is our proxy node.
     fn is_proxy(&self) -> bool {
         match self.state {
-            PeerState::Proxy | PeerState::Candidate | PeerState::Routing => true,
+            PeerState::Proxy => true,
             _ => false,
         }
     }
@@ -254,7 +254,7 @@ impl Peer {
     /// Returns whether the peer is a joining node and we are their proxy.
     fn is_joining_node(&self) -> bool {
         match self.state {
-            PeerState::JoiningNode | PeerState::Candidate | PeerState::Routing => true,
+            PeerState::JoiningNode => true,
             _ => false,
         }
     }
@@ -653,7 +653,7 @@ impl PeerManager {
         self.peers
             .values()
             .find(|peer| match peer.state {
-                PeerState::Proxy | PeerState::Routing => true,
+                PeerState::Proxy => true,
                 _ => false,
             })
             .map(Peer::name)
