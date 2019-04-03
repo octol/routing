@@ -30,7 +30,7 @@ use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, Prefix, RemovalDetails, RoutingTable, Xorable};
+use crate::routing_table::{Authority, Prefix, RoutingTable, Xorable};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
@@ -2631,15 +2631,11 @@ impl Node {
             self.remove_expired_peers();
             self.proxy_load_amount = 0;
 
-            let transition = if cfg!(feature = "mock") {
-                Transition::Stay
-            } else {
-                self.purge_invalid_rt_entries(outbox)
-            };
             if self.chain.is_member() {
                 outbox.send_event(Event::Tick);
             }
-            return transition;
+
+            return Transition::Stay;
         }
 
         if self.candidate_timer_token == Some(token) {
@@ -2743,30 +2739,6 @@ impl Node {
                 Message::Direct(DirectMessage::ParsecPoke(version)),
             );
         }
-    }
-
-    // Drop peers to which we think we have a connection, but where Crust reports
-    // that we're not connected to the peer.
-    fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
-        let peer_details = self.peer_mgr.get_routing_peer_details();
-        for pub_id in peer_details.out_of_sync_peers {
-            let _ = self.crust_service.disconnect(&pub_id);
-            let _ = self.dropped_peer(&pub_id, outbox, true);
-        }
-        for removal_detail in peer_details.removal_details {
-            let _ = self.dropped_routing_node(removal_detail, outbox, None);
-        }
-        for pub_id in peer_details.routing_peer_details {
-            if !self.crust_service.is_connected(&pub_id) {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Should have a direct connection to {}, but doesn't.",
-                    self,
-                    pub_id
-                );
-            }
-        }
-        Transition::Stay
     }
 
     fn send_candidate_approval(&mut self, outbox: &mut EventBox) {
@@ -3286,37 +3258,6 @@ impl Node {
         }
     }
 
-    /// Handles dropped routing peer with the given name and removal details. Returns true if we
-    /// should keep running, false if we should terminate.
-    fn dropped_routing_node(
-        &mut self,
-        details: RemovalDetails<XorName>,
-        outbox: &mut EventBox,
-        pub_id_opt: Option<PublicId>,
-    ) -> bool {
-        info!("{} Dropped {} from the routing table.", self, details.name);
-
-        if self.chain.is_member() {
-            outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
-        }
-
-        if details.was_in_our_section {
-            if let Some(pub_id) = pub_id_opt {
-                self.vote_for_event(NetworkEvent::Offline(pub_id));
-            }
-        }
-
-        if self.routing_table().is_empty() {
-            debug!("{} Lost all routing connections.", self);
-            if !self.is_first_node {
-                outbox.send_event(Event::RestartRequired);
-                return false;
-            }
-        }
-
-        true
-    }
-
     fn remove_expired_peers(&mut self) {
         for pub_id in self.peer_mgr.remove_expired_peers() {
             debug!("{} Disconnecting from timed out peer {:?}", self, pub_id);
@@ -3408,11 +3349,6 @@ impl Base for Node {
 
 #[cfg(feature = "mock")]
 impl Node {
-    /// Purge invalid routing entries.
-    pub fn purge_invalid_rt_entry(&mut self) {
-        let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
-    }
-
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }

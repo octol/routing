@@ -580,11 +580,6 @@ impl EventStepper for Node {
 
 #[cfg(feature = "mock")]
 impl Node {
-    /// Purge invalid routing entries.
-    pub fn purge_invalid_rt_entry(&mut self) {
-        self.machine.current_mut().purge_invalid_rt_entry()
-    }
-
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         self.machine.current().get_banned_client_ips()

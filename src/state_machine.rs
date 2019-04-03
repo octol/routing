@@ -168,12 +168,6 @@ impl Debug for State {
 
 #[cfg(feature = "mock")]
 impl State {
-    pub fn purge_invalid_rt_entry(&mut self) {
-        if let State::Node(ref mut state) = *self {
-            state.purge_invalid_rt_entry();
-        }
-    }
-
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         match *self {
             State::Node(ref state) => state.get_banned_client_ips(),

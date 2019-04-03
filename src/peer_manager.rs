@@ -52,13 +52,6 @@ pub mod test_consts {
     pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY_MS;
 }
 
-#[derive(Default)]
-pub struct PeerDetails {
-    pub routing_peer_details: Vec<PublicId>,
-    pub out_of_sync_peers: Vec<PublicId>,
-    pub removal_details: Vec<RemovalDetails<XorName>>,
-}
-
 #[derive(Debug)]
 /// Errors that occur in peer status management.
 pub enum Error {
@@ -867,72 +860,6 @@ impl PeerManager {
             })
             .cloned()
             .collect()
-    }
-
-    /// Returns all syncing peer's `PublicId`s, names, together with all out-of-sync peer's
-    /// `PublicId`s. Purges all dropped routing_nodes, i.e. nodes in the routing table but not in
-    /// the peer map.
-    pub fn get_routing_peer_details(&mut self) -> PeerDetails {
-        let mut result = PeerDetails::default();
-        let mut dropped_routing_nodes = Vec::new();
-        for name in self.routing_table().iter() {
-            match self.get_peer_by_name(name) {
-                None => {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "{} Have {} in RT, but have no entry in peer_map for it.",
-                        self,
-                        name
-                    );
-                    dropped_routing_nodes.push(*name);
-                }
-                Some(peer) => {
-                    if !peer.is_routing() {
-                        log_or_panic!(
-                            LogLevel::Error,
-                            "{} Have {} in RT, but have state {:?} for it.",
-                            self,
-                            name,
-                            peer.state
-                        );
-                        result.out_of_sync_peers.push(peer.pub_id);
-                    }
-                }
-            };
-        }
-        for name in dropped_routing_nodes {
-            if let Ok(removal_detail) = self.routing_table.remove(&name) {
-                result.removal_details.push(removal_detail);
-            }
-        }
-
-        let mut nodes_missing_from_rt = Vec::new();
-        for peer in self.peers.values() {
-            match peer.state {
-                PeerState::Routing(_) => {
-                    if !self.routing_table.has(peer.name()) {
-                        nodes_missing_from_rt.push(peer.pub_id);
-                        continue;
-                    }
-                }
-                PeerState::Candidate(_) | PeerState::Connected => (),
-                _ => continue,
-            };
-            result.routing_peer_details.push(peer.pub_id);
-        }
-        for id in nodes_missing_from_rt {
-            if let Some(peer) = self.peers.remove(&id) {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Peer {:?} with state {:?} is missing from RT.",
-                    self,
-                    peer.name(),
-                    peer.state
-                );
-                result.out_of_sync_peers.push(peer.pub_id);
-            }
-        }
-        result
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
