@@ -3179,6 +3179,7 @@ impl Node {
             .filter(|p| p.is_routing())
             .count()
             == 0
+            && self.chain().is_member()
         {
             debug!("{} Lost all routing connections.", self);
             if !self.is_first_node {
