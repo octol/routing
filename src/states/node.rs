@@ -2348,30 +2348,6 @@ impl Node {
             );
             let _ = self.crust_service.disconnect(pub_id);
             let _ = self.peer_mgr.remove_peer(pub_id);
-            // if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
-            //     match *peer.state() {
-            //         PeerState::Bootstrapper { peer_kind, .. } => {
-            //             if peer_kind == CrustUser::Client {
-            //                 let _ = self.dropped_clients.insert(*pub_id, ());
-            //             }
-            //         }
-            //         PeerState::Client { ip, traffic } => {
-            //             info!(
-            //                 "{} Stats - Client total session traffic from {:?} - {:?}",
-            //                 self, ip, traffic
-            //             );
-            //             let _ = self.dropped_clients.insert(*pub_id, ());
-            //         }
-            //         PeerState::ConnectionInfoPreparing { .. }
-            //         | PeerState::ConnectionInfoReady(_)
-            //         | PeerState::CrustConnecting
-            //         | PeerState::Connected
-            //         | PeerState::JoiningNode
-            //         | PeerState::Routing(_)
-            //         | PeerState::Candidate(_)
-            //         | PeerState::Proxy => (),
-            //     }
-            // }
         }
     }
 
