@@ -1113,9 +1113,9 @@ impl Node {
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate(_))
-            | Some(&PeerState::Proxy)
-            | Some(&PeerState::Routing(_)) => Ok(*pub_id.name()),
+            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Routing) => {
+                Ok(*pub_id.name())
+            }
             Some(&PeerState::ConnectionInfoPreparing { .. })
             | Some(&PeerState::ConnectionInfoReady(_))
             | Some(&PeerState::CrustConnecting)

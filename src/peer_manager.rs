@@ -78,17 +78,6 @@ impl error::Error for Error {
     }
 }
 
-/// The type of a connection with a peer in our routing table.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RoutingConnection {
-    /// We are/were the peer's proxy node.
-    JoiningNode(Instant),
-    /// The peer is/was our proxy node.
-    Proxy(Instant),
-    /// The peer is directly connected to us.
-    Direct,
-}
-
 /// Our relationship status with a known peer.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -128,9 +117,9 @@ pub enum PeerState {
     /// We are the proxy for the joining node
     JoiningNode,
     /// We are approved and routing to that peer.
-    Routing(RoutingConnection),
+    Routing,
     /// Connected peer is a joining node and waiting for approval of routing.
-    Candidate(RoutingConnection),
+    Candidate,
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -215,8 +204,8 @@ impl Peer {
             | PeerState::Proxy
             | PeerState::Client { .. }
             | PeerState::Connected
-            | PeerState::Candidate(_)
-            | PeerState::Routing(_) => true,
+            | PeerState::Candidate
+            | PeerState::Routing => true,
         }
     }
 
@@ -229,7 +218,7 @@ impl Peer {
             | PeerState::CrustConnecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Candidate(_) | PeerState::Client { .. } | PeerState::Routing(_) => {
+            PeerState::Candidate | PeerState::Client { .. } | PeerState::Routing => {
                 return false;
             }
         };
@@ -237,25 +226,10 @@ impl Peer {
         self.timestamp.elapsed() >= Duration::from_secs(timeout)
     }
 
-    /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
-    fn to_routing_connection(&self) -> Result<RoutingConnection, RoutingError> {
-        match self.state {
-            PeerState::Bootstrapper { .. }
-            | PeerState::ConnectionInfoPreparing { .. }
-            | PeerState::ConnectionInfoReady(_)
-            | PeerState::CrustConnecting
-            | PeerState::Client { .. } => Err(RoutingError::InvalidPeer),
-            PeerState::Candidate(conn) | PeerState::Routing(conn) => Ok(conn),
-            PeerState::Proxy => Ok(RoutingConnection::Proxy(self.timestamp)),
-            PeerState::JoiningNode => Ok(RoutingConnection::JoiningNode(self.timestamp)),
-            PeerState::Connected => Ok(RoutingConnection::Direct),
-        }
-    }
-
     /// Returns whether the peer is in `Routing` state.
     pub fn is_routing(&self) -> bool {
         match self.state {
-            PeerState::Routing(_) => true,
+            PeerState::Routing => true,
             _ => false,
         }
     }
@@ -263,9 +237,7 @@ impl Peer {
     /// Returns whether the peer is our proxy node.
     fn is_proxy(&self) -> bool {
         match self.state {
-            PeerState::Proxy
-            | PeerState::Candidate(RoutingConnection::Proxy(_))
-            | PeerState::Routing(RoutingConnection::Proxy(_)) => true,
+            PeerState::Proxy | PeerState::Candidate | PeerState::Routing => true,
             _ => false,
         }
     }
@@ -282,9 +254,7 @@ impl Peer {
     /// Returns whether the peer is a joining node and we are their proxy.
     fn is_joining_node(&self) -> bool {
         match self.state {
-            PeerState::JoiningNode
-            | PeerState::Candidate(RoutingConnection::JoiningNode(_))
-            | PeerState::Routing(RoutingConnection::JoiningNode(_)) => true,
+            PeerState::JoiningNode | PeerState::Candidate | PeerState::Routing => true,
             _ => false,
         }
     }
@@ -578,8 +548,7 @@ impl PeerManager {
             }
         };
 
-        let conn = peer.to_routing_connection()?;
-        peer.state = PeerState::Candidate(conn);
+        peer.state = PeerState::Candidate;
 
         let challenge = Some(ResourceProofChallenge {
             target_size: target_size,
@@ -655,26 +624,7 @@ impl PeerManager {
             return Err(RoutingError::UnknownConnection(*pub_id));
         };
 
-        let conn = match peer.to_routing_connection() {
-            Ok(conn) => conn,
-            Err(e) => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Not adding Peer {} to RT - not connected.",
-                    self_display,
-                    pub_id
-                );
-                return Err(e);
-            }
-        };
-
-        match peer.state {
-            PeerState::Routing(cur_conn) if cur_conn == conn => (),
-            _ => {
-                peer.state = PeerState::Routing(conn);
-                trace!("{} Set {} to {:?}", self_display, pub_id, peer.state);
-            }
-        }
+        peer.state = PeerState::Routing;
         Ok(())
     }
 
@@ -703,7 +653,7 @@ impl PeerManager {
         self.peers
             .values()
             .find(|peer| match peer.state {
-                PeerState::Proxy | PeerState::Routing(RoutingConnection::Proxy(_)) => true,
+                PeerState::Proxy | PeerState::Routing => true,
                 _ => false,
             })
             .map(Peer::name)
@@ -727,30 +677,18 @@ impl PeerManager {
             None
         };
 
-        let mut normalisable_conns = Vec::new();
         let expired_peers = self
             .peers
             .values()
-            .filter(|peer| match peer.state {
-                PeerState::Routing(RoutingConnection::JoiningNode(timestamp))
-                | PeerState::Routing(RoutingConnection::Proxy(timestamp)) => {
-                    if timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
-                        normalisable_conns.push(*peer.pub_id());
-                    }
-                    false
+            .filter_map(|peer| {
+                if peer.is_expired() {
+                    Some(*peer.pub_id())
+                } else {
+                    None
                 }
-                _ => peer.is_expired(),
             })
-            .map(Peer::pub_id)
-            .cloned()
             .chain(remove_candidate)
             .collect_vec();
-
-        for id in &normalisable_conns {
-            if let Some(peer) = self.peers.get_mut(id) {
-                peer.state = PeerState::Routing(RoutingConnection::Direct)
-            }
-        }
 
         for id in &expired_peers {
             let _ = self.remove_peer(id);
@@ -986,13 +924,13 @@ impl PeerManager {
             }
             Some(
                 peer @ Peer {
-                    state: PeerState::Routing(_),
+                    state: PeerState::Routing,
                     ..
                 },
             )
             | Some(
                 peer @ Peer {
-                    state: PeerState::Candidate(_),
+                    state: PeerState::Candidate,
                     ..
                 },
             ) => {
