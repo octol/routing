@@ -20,7 +20,7 @@ use super::{
     SectionInfo,
 };
 use crate::error::RoutingError;
-use crate::id::{FullId, PublicId};
+use crate::id::PublicId;
 use crate::messages::SignedMessage;
 use crate::routing_table::DEFAULT_PREFIX;
 use crate::routing_table::{Authority, Error};
@@ -103,8 +103,7 @@ impl Chain {
     // FIXME: This chain cannot be used. Ideally we should not be creating the chain without genesis
     // info
     /// Create a new chain given genesis information
-    pub fn with_min_sec_size(min_sec_size: usize) -> Self {
-        let our_id = *FullId::default().public_id();
+    pub fn with_id_and_min_sec_size(our_id: PublicId, min_sec_size: usize) -> Self {
         Self {
             min_sec_size,
             our_id,

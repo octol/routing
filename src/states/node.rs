@@ -255,7 +255,7 @@ impl Node {
             gen_pfx_info: None,
             poke_timer_token: None,
             gossip_timer_token,
-            chain: Chain::with_min_sec_size(min_section_size),
+            chain: Chain::with_id_and_min_sec_size(public_id, min_section_size),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
         }
