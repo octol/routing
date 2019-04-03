@@ -494,16 +494,6 @@ impl StateMachine {
         interleaved.reverse();
         self.events.extend(interleaved);
 
-        // TODO (adam): why don't we do this:
-        /*
-        if !self.events.is_empty() {
-            self.handle_event_from_list(outbox);
-            Ok(())
-        } else {
-            Err(TryRecvError::Empty)
-        }
-        */
-
         if self.events.iter().any(EventType::is_not_a_timeout) {
             self.handle_event_from_list(outbox);
             return Ok(());
