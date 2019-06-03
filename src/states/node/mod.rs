@@ -132,6 +132,9 @@ pub struct Node {
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
     chain: Chain,
+    /// Cached proving sections used to in case a prefix change causes a section info not to
+    /// accumulate.
+    set_of_proving_sections: BTreeSet<(Vec<ProvingSection>, SectionInfo)>,
 }
 
 impl Node {
@@ -232,6 +235,7 @@ impl Node {
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
             chain: details.chain,
+            set_of_proving_sections: Default::default(),
         }
     }
 
@@ -465,6 +469,14 @@ impl Node {
                 self.vote_for_event(event.clone());
             });
 
+        let ps = mem::replace(&mut self.set_of_proving_sections, Default::default());
+        ps.iter().for_each(|p| {
+            //if our_pfx.is_neighbour(p.1.prefix()) {
+                warn!("JON: {} p.1.version: {}", *self, p.1.version());
+                self.vote_for_event(NetworkEvent::ProvingSections(p.0.clone(), p.1.clone()));
+            //}
+        });
+
         Ok(())
     }
 
@@ -568,6 +580,9 @@ impl Node {
                 .any(|si| self.chain.is_new_neighbour(si))
             {
                 if let Some(si) = signed_msg.source_section() {
+                    let ps = signed_msg.proving_sections().clone();
+                    self.add_to_proving_section_cache(ps.clone(), si.clone());
+
                     // TODO: Why is `add_new_sections` still necessary? The vote should suffice.
                     // TODO: This is enabled for relayed messages only because it considerably
                     //       slows down the tests. Find out why, maybe enable it in more cases.
@@ -575,7 +590,7 @@ impl Node {
                         && (!self.in_authority(&signed_msg.routing_message().dst)
                             || signed_msg.routing_message().dst.is_single())
                     {
-                        let ps = signed_msg.proving_sections().clone();
+                        //warn!("JON: {} si.version: {}", *self, si.version());
                         self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
                     }
                 }
@@ -615,6 +630,27 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    fn add_to_proving_section_cache(
+        &mut self,
+        proving_secs: Vec<ProvingSection>,
+        sec_info: SectionInfo,
+    ) {
+        //if self.chain.is_new_neighbour(&sec_info) {
+            let _ = self
+                .set_of_proving_sections
+                .insert((proving_secs, sec_info));
+        //}
+    }
+
+    fn clear_proving_section_cache(&mut self, sec_info: &SectionInfo) {
+        let ps = if let Some(a) = self.set_of_proving_sections.iter().find(|(_, si)| si == sec_info) {
+            a.clone()
+        } else {
+            return;
+        };
+        let _ = self.set_of_proving_sections.remove(&ps);
     }
 
     fn dispatch_routing_message(
@@ -2409,6 +2445,7 @@ impl Approved for Node {
         Ok(())
     }
 
+    // Chain tells node, Section has accumulated, handle it
     fn handle_section_info_event(
         &mut self,
         sec_info: SectionInfo,
@@ -2424,6 +2461,7 @@ impl Approved for Node {
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
         }
 
+        // Our section or neighbour
         let self_sec_update = sec_info.prefix().matches(self.name());
 
         self.update_peer_states(outbox);
@@ -2433,6 +2471,8 @@ impl Approved for Node {
                 .reset_candidate_if_member_of(sec_info.members());
             self.send_neighbour_infos();
         } else {
+            //self.clear_proving_section_cache(&sec_info);
+
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.into_network_event());

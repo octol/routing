@@ -92,13 +92,19 @@ fn merge_five_sections_into_one() {
 
 #[test]
 fn concurrent_merge() {
+    let _ = maidsafe_utilities::log::init(false);
     let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    //let network = Network::new(min_section_size, None);
+    let network = Network::new(
+        min_section_size,
+        Some([1569017253, 1167293735, 632341702, 1741885426]),
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
     verify_invariant_for_all_nodes(&mut nodes);
     rng.shuffle(&mut nodes);
 
+    warn!("1");
     // Choose two random sections to drop nodes from:
     // Not sibling sections as we would only merge 2 sections instead of 4.
     // Not one without sibling as this section would merge with 2 other sections.
@@ -129,10 +135,12 @@ fn concurrent_merge() {
         let len = nodes.iter().filter(|node| node.our_prefix() == pfx).count();
         for _ in min_section_size..len {
             let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
+            warn!("Dropping: {}", nodes[index].name());
             drop(nodes.remove(index));
             poll_and_resend(&mut nodes, &mut []);
         }
     }
+    warn!("2");
 
     // No sections should have merged yet.
     assert_eq!(count_sections(&nodes), 5);
@@ -141,13 +149,18 @@ fn concurrent_merge() {
     // `min_section_size`.
     for pfx in &prefixes_to_drop_from {
         let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
+        warn!("Dropping: {}", nodes[index].name());
         drop(nodes.remove(index));
     }
+    warn!("3");
 
     // Poll the nodes, check the invariant and ensure the network has merged to 3 sections.
     poll_and_resend(&mut nodes, &mut []);
+    warn!("4");
     verify_invariant_for_all_nodes(&mut nodes);
+    warn!("5");
     assert_eq!(count_sections(&nodes), 3);
+    warn!("6");
 }
 
 #[test]
