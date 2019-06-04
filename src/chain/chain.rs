@@ -67,6 +67,7 @@ pub struct Chain {
     split_cache: Option<(SectionInfo, ProofSet)>,
     /// The set of section info hashes that are currently merging.
     merging: BTreeSet<Digest256>,
+    pfx_successfully_polled: bool,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -109,6 +110,7 @@ impl Chain {
             state: ChainState::Normal,
             split_cache: None,
             merging: Default::default(),
+            pfx_successfully_polled: false,
         }
     }
 
@@ -222,6 +224,11 @@ impl Chain {
         }
         let _ = self.chain_accumulator.remove(&event);
 
+        if self.pfx_successfully_polled == false {
+            warn!("JON: {} toggling pfx_successfully_polled", *self);
+            self.pfx_successfully_polled = true;
+        }
+
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
                 self.add_section_info(sec_info.clone(), proofs)?;
@@ -245,6 +252,16 @@ impl Chain {
             _ => (),
         }
         Ok(Some(event))
+    }
+
+    /// is pfx successfully polled
+    pub fn is_pfx_successfully_polled(&self) -> bool {
+        self.pfx_successfully_polled
+    }
+
+    /// set pfx successfully polled
+    pub fn set_pfx_successfully_polled(&mut self, val: bool) {
+        self.pfx_successfully_polled = val;
     }
 
     /// Adds a member to our section, creating a new `SectionInfo` in the process.

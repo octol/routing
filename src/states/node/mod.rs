@@ -333,6 +333,7 @@ impl Node {
     fn merge_if_necessary(&mut self) -> Result<(), RoutingError> {
         let sibling_pfx = self.our_prefix().sibling();
         if self.chain.is_self_merge_ready() && self.chain.other_prefixes().contains(&sibling_pfx) {
+            //warn!("JON: {} is_self_merge_ready()", *self);
             let payload = *self.chain.our_info().hash();
             let src = Authority::PrefixSection(*self.our_prefix());
             let dst = Authority::PrefixSection(sibling_pfx);
@@ -342,8 +343,10 @@ impl Node {
             }
         }
         if let Some(merged_info) = self.chain.try_merge()? {
+            //warn!("JON: {} try_merge()", *self);
             self.vote_for_event(NetworkEvent::SectionInfo(merged_info));
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
+            //warn!("JON: {} should_vote_for_merge()", *self);
             self.vote_for_event(NetworkEvent::OurMerge);
         }
         Ok(())
@@ -399,6 +402,7 @@ impl Node {
         // Clear any relocation overrides
         self.next_relocation_dst = None;
         self.next_relocation_interval = None;
+        self.chain.set_pfx_successfully_polled(false);
 
         let drained_obs: Vec<_> = self
             .parsec_map
@@ -472,7 +476,7 @@ impl Node {
         let ps = mem::replace(&mut self.set_of_proving_sections, Default::default());
         ps.iter().for_each(|p| {
             //if our_pfx.is_neighbour(p.1.prefix()) {
-                warn!("JON: {} p.1.version: {}", *self, p.1.version());
+                warn!("JON: {} vote for event: p.1.version: {}", *self, p.1.version());
                 self.vote_for_event(NetworkEvent::ProvingSections(p.0.clone(), p.1.clone()));
             //}
         });
@@ -581,7 +585,12 @@ impl Node {
             {
                 if let Some(si) = signed_msg.source_section() {
                     let ps = signed_msg.proving_sections().clone();
-                    self.add_to_proving_section_cache(ps.clone(), si.clone());
+                    if self.chain.is_pfx_successfully_polled() {
+                        self.add_to_proving_section_cache(ps.clone(), si.clone());
+                    } else {
+                        warn!("JON: {} vote for event: si.version: {}", *self, si.version());
+                        self.vote_for_event(NetworkEvent::ProvingSections(ps.clone(), si.clone()));
+                    }
 
                     // TODO: Why is `add_new_sections` still necessary? The vote should suffice.
                     // TODO: This is enabled for relayed messages only because it considerably
@@ -593,6 +602,16 @@ impl Node {
                         //warn!("JON: {} si.version: {}", *self, si.version());
                         self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
                     }
+        //if !self.chain.is_pfx_successfully_polled() {
+        //    let ps = mem::replace(&mut self.set_of_proving_sections, Default::default());
+        //    ps.iter().for_each(|p| {
+        //        //if our_pfx.is_neighbour(p.1.prefix()) {
+        //            warn!("JON: {} vote for event: p.1.version: {}", *self, p.1.version());
+        //            self.vote_for_event(NetworkEvent::ProvingSections(p.0.clone(), p.1.clone()));
+        //        //}
+        //    });
+        //}
+
                 }
             }
         }
@@ -637,6 +656,7 @@ impl Node {
         proving_secs: Vec<ProvingSection>,
         sec_info: SectionInfo,
     ) {
+        warn!("JON: {} add_to_proving_section_cache: p.1.version: {}", *self, sec_info.version());
         //if self.chain.is_new_neighbour(&sec_info) {
             let _ = self
                 .set_of_proving_sections
@@ -644,6 +664,7 @@ impl Node {
         //}
     }
 
+    #[allow(dead_code)]
     fn clear_proving_section_cache(&mut self, sec_info: &SectionInfo) {
         let ps = if let Some(a) = self.set_of_proving_sections.iter().find(|(_, si)| si == sec_info) {
             a.clone()
@@ -2452,13 +2473,20 @@ impl Approved for Node {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
+
+        if self.set_of_proving_sections.iter().find(|(_, si)| *si.version() == 27).is_some() {
+            warn!("JON: {} has version 27 in cache", *self);
+        }
+
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*sec_info.prefix()), outbox);
             self.send_neighbour_infos();
+            warn!("JON: {} has split", *self);
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
+            warn!("JON: {} has merged", *self);
         }
 
         // Our section or neighbour
@@ -2470,6 +2498,7 @@ impl Approved for Node {
             self.peer_mgr
                 .reset_candidate_if_member_of(sec_info.members());
             self.send_neighbour_infos();
+
         } else {
             //self.clear_proving_section_cache(&sec_info);
 
