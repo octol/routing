@@ -16,8 +16,8 @@ use crate::{
     cache::Cache,
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
-        NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
-        SectionKeyInfo, SendAckMessagePayload,
+        NetworkEvent, OnlinePayload, PrefixChange, ResetParsecOutcome, SectionInfo, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -373,17 +373,21 @@ impl Elder {
         self.next_relocation_dst = None;
         self.next_relocation_interval = None;
 
+        self.prune_parsec()
+    }
+
+    fn prune_parsec(&mut self) -> Result<(), RoutingError> {
         let drained_obs: Vec<_> = self
             .parsec_map
             .our_unpolled_observations()
             .cloned()
             .collect();
 
-        let PrefixChangeOutcome {
+        let ResetParsecOutcome {
             gen_pfx_info,
             mut cached_events,
             completed_events,
-        } = self.chain.finalise_prefix_change()?;
+        } = self.chain.reset_and_get_parsec_init_info()?;
         self.gen_pfx_info = gen_pfx_info;
         self.chain.reset_candidate();
         self.peer_mgr.reset_candidate();

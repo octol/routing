@@ -377,9 +377,9 @@ impl Chain {
                 .any(|ni_event| ni_event.proves_successor_info(sec_info, proofs))
     }
 
-    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
-    /// cached and currently accumulated events.
-    pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
+    /// Finalises a split, merge or parsec prune by resetting state - creates a `GenesisPfxInfo`
+    /// for the new graph and returns the cached and currently accumulated events.
+    pub fn reset_and_get_parsec_init_info(&mut self) -> Result<ResetParsecOutcome, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
@@ -392,13 +392,13 @@ impl Chain {
             .map(NetworkEvent::NeighbourMerge);
 
         info!(
-            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
+            "reset_and_get_parsec_init_info: {:?}, {:?}, state: {:?}",
             self.our_prefix(),
             self.our_id(),
             self.state,
         );
 
-        Ok(PrefixChangeOutcome {
+        Ok(ResetParsecOutcome {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
@@ -1252,8 +1252,8 @@ impl Chain {
     }
 }
 
-/// The outcome of a prefix change.
-pub struct PrefixChangeOutcome {
+/// The outcome of resetting Parsec, such as during a prune or prefix change.
+pub struct ResetParsecOutcome {
     /// The new genesis prefix info.
     pub gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted.
