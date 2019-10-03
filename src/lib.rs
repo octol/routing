@@ -161,11 +161,20 @@ pub const SAFE_SECTION_SIZE: usize = 100;
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
 
+pub(crate) use crate::chain::Chain;
 #[cfg(feature = "mock_base")]
 use crate::mock::quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
-pub(crate) use crate::chain::Chain;
+#[cfg(feature = "mock_base")]
+pub use crate::{
+    chain::{
+        bls_key_set_from_elders_info, delivery_group_size, elders_info_for_test,
+        section_proof_chain_from_elders_info, verify_chain_invariant,
+    },
+    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    peer_manager::test_consts,
+};
 pub use crate::{
     config_handler::{Config, DevConfig},
     error::{InterfaceError, RoutingError},
@@ -178,15 +187,6 @@ pub use crate::{
     types::MessageId,
     utils::XorTargetInterval,
     xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
-};
-#[cfg(feature = "mock_base")]
-pub use crate::{
-    chain::{
-        bls_key_set_from_elders_info, delivery_group_size, elders_info_for_test,
-        section_proof_chain_from_elders_info, verify_chain_invariant,
-    },
-    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    peer_manager::test_consts,
 };
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;

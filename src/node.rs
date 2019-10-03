@@ -25,8 +25,11 @@ use crate::{
 use crate::{utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
-use std::fmt::{self, Display, Formatter};
-use std::sync::mpsc;
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Formatter},
+};
+use std::{iter, sync::mpsc};
 #[cfg(feature = "mock_base")]
 use unwrap::unwrap;
 
@@ -217,7 +220,7 @@ impl Node {
         Some((self.chain()?).our_id())
     }
     /// Our section members once we are a part of the section
-    pub fn our_section_members(&self) -> Option<&BTreeSet<PublicId>>  {
+    pub fn our_section_members(&self) -> Option<&BTreeSet<PublicId>> {
         Some((self.chain()?).our_info().members())
     }
     /// Our known valid peers once we are a part of the section
@@ -237,7 +240,11 @@ impl Node {
     }
     /// Verify chain invariant
     pub fn verify_chain_invariant(&self, min_sec_size: usize) {
-        crate::chain::verify_chain_invariant(unwrap!(self.chain()), min_sec_size)
+        crate::chain::verify_chain_invariant(iter::once(unwrap!(self.chain())), min_sec_size)
+    }
+    /// Their knowledge
+    pub fn get_their_knowldege(&self) -> Option<&BTreeMap<Prefix<XorName>, u64>> {
+        Some((self.chain()?).get_their_knowldege())
     }
 
     // #####################################################

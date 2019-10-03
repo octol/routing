@@ -605,7 +605,12 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 
 pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode]) {
     let min_section_size = network.min_section_size();
-    verify_chain_invariant(nodes.iter().map(|test_node| unwrap!(test_node.inner.min_sec_size_from_chain())), min_section_size);
+    verify_chain_invariant(
+        nodes
+            .iter()
+            .map(|test_node| unwrap!(test_node.inner.chain())),
+        min_section_size,
+    );
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {

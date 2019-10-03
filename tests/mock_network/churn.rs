@@ -222,7 +222,8 @@ fn random_churn<R: Rng>(
     }
 
     // Use min_sec_size rather than section size to prevent collapsing any groups.
-    let max_drop = (unwrap!(nodes[0].inner.min_sec_size_from_chain()) - 1) * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
+    let max_drop = (unwrap!(nodes[0].inner.min_sec_size_from_chain()) - 1)
+        * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
         / QUORUM_DENOMINATOR;
     assert!(max_drop > 0);
     let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
