@@ -493,8 +493,11 @@ fn aggressive_churn() {
 
 #[test]
 fn messages_during_churn() {
+    let _ = maidsafe_utilities::log::init(false);
+
+    let seed = Some([3294012606, 1464152412, 2257329748, 1420684311]);
     let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(min_section_size, seed);
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
     let max_prefixes_len = prefixes.len() * 2;
@@ -552,6 +555,9 @@ fn messages_during_churn() {
             warn!("Added nodes: {:?}", added_names);
         }
         expectations.verify(&mut nodes);
+        for node in nodes.iter() {
+            trace!("{:?}", node.chain());
+        }
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }
