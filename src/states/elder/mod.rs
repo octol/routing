@@ -865,10 +865,12 @@ impl Elder {
             self, payload.destination
         );
 
-        let names = self.chain.closest_section(&payload.destination).1;
-        let conn_infos = self
-            .peer_map
-            .get_connection_infos(&names)
+        let closest_section = self.chain.closest_section(&payload.destination).0;
+        let conn_infos: Vec<_> = self
+            .chain
+            .get_section_elders(&closest_section)
+            .iter()
+            .flat_map(|nodes| nodes.iter().map(|(_, node)| node.connection_info()))
             .cloned()
             .collect();
 
