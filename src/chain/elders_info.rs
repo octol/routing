@@ -94,9 +94,7 @@ impl EldersInfo {
         self.members.keys().copied().collect()
     }
 
-    // WIP: remove me?
-    // WIP: rename to member_map?
-    pub fn p2p_members(&self) -> &BTreeMap<PublicId, P2pNode> {
+    pub fn member_map(&self) -> &BTreeMap<PublicId, P2pNode> {
         &self.members
     }
 

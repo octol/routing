@@ -22,7 +22,7 @@ use crate::{
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix};
+use crate::{chain::SectionProofChain, id::P2pNode, utils::XorTargetInterval, Chain, Prefix};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::{
@@ -387,7 +387,10 @@ impl Node {
 
     /// Returns a set of elders we should be connected to.
     pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.chain().into_iter().flat_map(Chain::elders)
+        self.chain()
+            .into_iter()
+            .flat_map(Chain::elders)
+            .map(P2pNode::public_id)
     }
 
     /// Returns their knowledge
