@@ -151,8 +151,8 @@ impl Chain {
     fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
         self.state
             .our_members
-            .iter()
-            .map(|(pub_id, member_info)| (*pub_id, member_info.age_counter))
+            .values()
+            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
             .collect()
     }
 
@@ -366,8 +366,8 @@ impl Chain {
         let info = self
             .state
             .our_members
-            .entry(pub_id)
-            .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
+            .entry(*pub_id.name())
+            .or_insert_with(|| MemberInfo::new(p2p_node));
         info.state = MemberState::Joined;
         info.set_age(age);
     }
@@ -377,7 +377,7 @@ impl Chain {
         self.churn_in_progress = true;
         self.assert_no_prefix_change("remove member");
 
-        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+        if let Some(info) = self.state.our_members.get_mut(pub_id.name()) {
             info.state = MemberState::Left;
             self.increase_members_age(&pub_id);
         } else {
@@ -561,7 +561,7 @@ impl Chain {
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
         self.state
             .our_members
-            .get(pub_id)
+            .get(pub_id.name())
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
     }
@@ -571,7 +571,7 @@ impl Chain {
     pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
         self.state
             .our_members
-            .get(pub_id)
+            .get(pub_id.name())
             .filter(|info| info.state == MemberState::Joined)
     }
 
@@ -579,8 +579,8 @@ impl Chain {
     pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
         self.state
             .our_members
-            .get(&pub_id)
-            .map(|member_info| &member_info.connection_info)
+            .get(pub_id.name())
+            .map(|member_info| member_info.p2p_node.connection_info())
     }
 
     /// Returns a set of elders we should be connected to.
