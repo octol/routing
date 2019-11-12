@@ -16,6 +16,8 @@ use std::{iter, slice};
 
 #[test]
 fn relocate_without_split() {
+    let _ = maidsafe_utilities::log::init(false);
+
     // Create a network of two sections, then trigger relocation of a random node from one section
     // into the other section.
     let network = Network::new(
@@ -23,7 +25,9 @@ fn relocate_without_split() {
             elder_size: LOWERED_ELDER_SIZE,
             safe_section_size: LOWERED_ELDER_SIZE,
         },
-        None,
+        //None,
+        //Some([3168689549, 967849249, 4090218264, 2480031878]),
+        Some([3035716346, 3092146047, 2044967586, 2734024456]),
     );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -54,7 +58,7 @@ fn relocate_without_split() {
                 !relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
             })
             .fire_join_timeout(false),
-    )
+    );
 }
 
 #[test]

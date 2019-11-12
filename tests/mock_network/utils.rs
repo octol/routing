@@ -310,7 +310,7 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         return;
     }
 
-    panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS);
+    panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS)
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those

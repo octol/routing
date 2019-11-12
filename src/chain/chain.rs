@@ -583,6 +583,13 @@ impl Chain {
             .map(|member_info| member_info.p2p_node.connection_info())
     }
 
+    pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .our_info()
+            .member_map()
+            .get(name)
+    }
+
     /// Returns the `P2pNode` for a member of our section.
     pub fn get_member_p2p_node_by_id(&self, pub_id: &PublicId) -> Option<&P2pNode> {
         self.get_member_p2p_node(pub_id.name())
@@ -608,6 +615,7 @@ impl Chain {
 
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.get_member_p2p_node(name)
+            .or_else(|| self.get_our_info_p2p_node(name))
             .or_else(|| self.get_neighbour_p2p_node(name))
     }
 
@@ -1420,6 +1428,11 @@ impl Debug for Chain {
         writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
         for info in self.state.our_infos() {
             writeln!(formatter, "\t{}", info)?;
+        }
+
+        writeln!(formatter, "\tour_members: len {}", self.state.our_members.len())?;
+        for (_, member) in self.state.our_members() {
+            writeln!(formatter, "\t\t{:?}", member)?;
         }
 
         writeln!(formatter, "\tneighbour_infos:")?;

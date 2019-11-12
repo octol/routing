@@ -27,6 +27,7 @@ use crate::{
 };
 use log::LogLevel;
 use std::collections::BTreeSet;
+use itertools::Itertools;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -156,10 +157,35 @@ pub trait Approved: Base {
                     return;
                 }
 
+                let p2p_recipients_old: Vec<_> = recipients
+                    .iter()
+                    .filter_map(|pub_id| {
+                        self.peer_map()
+                            .get_connection_info(pub_id)
+                            .map(|conn_info| P2pNode::new(**pub_id, conn_info.clone()))
+                    })
+                    .collect();
+
+                let connected_to = self.peer_map().connected_ids().cloned().collect::<Vec<_>>();
+
                 let p2p_recipients: Vec<_> = recipients
                     .into_iter()
-                    .filter_map(|pub_id| self.chain().get_member_p2p_node_by_id(&pub_id))
+                    //.filter_map(|pub_id| self.chain().get_member_p2p_node_by_id(&pub_id))
+                    .filter_map(|pub_id| self.chain().get_p2p_node(pub_id.name()))
+                    .cloned()
                     .collect();
+
+                //if false {
+                if p2p_recipients_old != p2p_recipients {
+                    info!("JON: {} - send_parsec_gossip", self);
+                    info!("JON: {} -   p2p_recipients_old: {}", self, p2p_recipients_old.iter().format(", "));
+                    info!("JON: {} -   p2p_recipients:     {}", self, p2p_recipients.iter().format(", "));
+                    info!("JON: {} - connected to", self);
+                    info!("JON: {} -   connected_to: {}", self, connected_to.iter().format(", "));
+                    info!("JON: {:?}", self.chain());
+                    //panic!();
+                }
+                //}
 
                 if p2p_recipients.is_empty() {
                     log_or_panic!(
