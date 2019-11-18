@@ -71,7 +71,6 @@ pub struct ElderDetails {
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub parsec_map: ParsecMap,
-    pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub rng: MainRng,
@@ -86,7 +85,6 @@ pub struct Elder {
     msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -128,7 +126,6 @@ impl Elder {
             public_id,
             gen_pfx_info.clone(),
         );
-        let peer_map = PeerMap::new();
 
         let details = ElderDetails {
             chain,
@@ -140,7 +137,6 @@ impl Elder {
             routing_msg_backlog: Default::default(),
             direct_msg_backlog: Default::default(),
             parsec_map,
-            peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
             rng,
@@ -178,7 +174,6 @@ impl Elder {
             network_service: self.network_service,
             network_rx: None,
             parsec_map: self.parsec_map,
-            peer_map: self.peer_map,
             sig_accumulator: self.sig_accumulator,
         })
     }
@@ -195,7 +190,6 @@ impl Elder {
                 routing_msg_backlog: Default::default(),
                 direct_msg_backlog: Default::default(),
                 parsec_map: state.parsec_map,
-                peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
                 rng: rng::new(),
@@ -244,7 +238,6 @@ impl Elder {
             msg_queue: details.msg_queue,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
-            peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
             tick_timer_token,
@@ -370,8 +363,8 @@ impl Elder {
 
         for p2p_node in change.added {
             let pub_id = *p2p_node.public_id();
-            if !self.peer_map.has(&pub_id) {
-                self.peer_map
+            if !self.peer_map().has(&pub_id) {
+                self.peer_map_mut()
                     .insert(pub_id, p2p_node.connection_info().clone());
                 self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
             };
@@ -380,13 +373,13 @@ impl Elder {
         let to_connect: Vec<_> = self
             .chain
             .our_elders()
-            .filter(|p2p_node| !self.peer_map.has(p2p_node.public_id()))
+            .filter(|p2p_node| !self.peer_map().has(p2p_node.public_id()))
             .cloned()
             .collect();
 
         for p2p_node in to_connect.into_iter() {
             let pub_id = p2p_node.public_id();
-            self.peer_map
+            self.peer_map_mut()
                 .insert(*pub_id, p2p_node.connection_info().clone());
             self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         }
@@ -656,13 +649,13 @@ impl Elder {
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
-        if !self.peer_map.has(&pub_id) {
+        if !self.peer_map().has(&pub_id) {
             trace!(
                 "{} - Not yet connected to {} - use p2p_node.",
                 self,
                 p2p_node
             );
-            self.peer_map
+            self.peer_map_mut()
                 .insert(pub_id, p2p_node.connection_info().clone());
             self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         };
@@ -708,7 +701,7 @@ impl Elder {
         );
 
         let pub_id = *p2p_node.public_id();
-        if !self.peer_map.has(&pub_id) {
+        if !self.peer_map().has(&pub_id) {
             log_or_panic!(
                 LogLevel::Error,
                 "Not connected to the sender of BootstrapRequest."
@@ -866,11 +859,7 @@ impl Elder {
             .cloned()
             .collect();
 
-        for conn_info in self.peer_map.remove_all() {
-            self.network_service
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr);
-        }
+        self.network_service_mut().remove_and_disconnect_all();
 
         Transition::Relocate {
             details,
@@ -1069,7 +1058,7 @@ impl Elder {
     // it must be restarted.
     fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
         if self
-            .peer_map
+            .peer_map()
             .connected_ids()
             .filter(|id| self.chain.our_id() != *id)
             .any(|id| self.chain.is_peer_our_elder(id))
@@ -1195,11 +1184,11 @@ impl Base for Elder {
     }
 
     fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+        &self.network_service().peer_map
     }
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {
@@ -1455,7 +1444,7 @@ impl Elder {
     }
 
     pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
-        self.peer_map.identify(pub_id, peer_addr)
+        self.peer_map_mut().identify(pub_id, peer_addr)
     }
 
     pub fn send_msg_to_targets(
