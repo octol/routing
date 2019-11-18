@@ -366,7 +366,10 @@ impl Elder {
             if !self.peer_map().has(&pub_id) {
                 self.peer_map_mut()
                     .insert(pub_id, p2p_node.connection_info().clone());
-                self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
+                self.send_direct_message(
+                    p2p_node.connection_info(),
+                    DirectMessage::ConnectionResponse,
+                );
             };
         }
 
@@ -381,7 +384,10 @@ impl Elder {
             let pub_id = p2p_node.public_id();
             self.peer_map_mut()
                 .insert(*pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
+            self.send_direct_message(
+                p2p_node.connection_info(),
+                DirectMessage::ConnectionResponse,
+            );
         }
     }
 
@@ -657,7 +663,10 @@ impl Elder {
             );
             self.peer_map_mut()
                 .insert(pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
+            self.send_direct_message(
+                p2p_node.connection_info(),
+                DirectMessage::ConnectionResponse,
+            );
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -728,7 +737,7 @@ impl Elder {
                 self.chain.elder_size() - 1
             );
             self.send_direct_message(
-                &p2p_node,
+                p2p_node.connection_info(),
                 DirectMessage::BootstrapResponse(BootstrapResponse::Error(
                     BootstrapResponseError::TooFewPeers,
                 )),
@@ -763,7 +772,10 @@ impl Elder {
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(p2p_node, DirectMessage::BootstrapResponse(response));
+        self.send_direct_message(
+            p2p_node.connection_info(),
+            DirectMessage::BootstrapResponse(response),
+        );
     }
 
     fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
@@ -829,7 +841,10 @@ impl Elder {
             MIN_AGE
         };
 
-        self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
+        self.send_direct_message(
+            p2p_node.connection_info(),
+            DirectMessage::ConnectionResponse,
+        );
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
@@ -989,6 +1004,7 @@ impl Elder {
                     .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
                     .is_new()
             })
+            .map(|node| node.connection_info().clone())
             .collect();
 
         let message = self.to_hop_message(signed_msg.clone())?;
@@ -1403,9 +1419,9 @@ impl Base for Elder {
                     signed_msg.routing_message(),
                     target
                 );
-                let p2p_node = p2p_node.clone();
+                let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
-                    &p2p_node,
+                    &conn_info,
                     DirectMessage::MessageSignature(signed_msg.clone()),
                 );
             } else {
@@ -1449,7 +1465,7 @@ impl Elder {
 
     pub fn send_msg_to_targets(
         &mut self,
-        dst_targets: &[P2pNode],
+        dst_targets: &[ConnectionInfo],
         dg_size: usize,
         message: Message,
     ) {
