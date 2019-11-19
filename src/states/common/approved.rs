@@ -159,7 +159,7 @@ pub trait Approved: Base {
 
                 let p2p_recipients: Vec<_> = recipients
                     .into_iter()
-                    .filter_map(|pub_id| self.chain().get_member_p2p_node_by_id(&pub_id))
+                    .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
                     .cloned()
                     .collect();
 

@@ -662,12 +662,6 @@ impl Chain {
             .map(|member_info| member_info.p2p_node.connection_info())
     }
 
-    /// Returns the `P2pNode` for a member of our section.
-    pub fn get_member_p2p_node_by_id(&self, pub_id: &PublicId) -> Option<&P2pNode> {
-        self.get_member_p2p_node(pub_id.name())
-            .filter(|p2p_node| p2p_node.public_id() == pub_id)
-    }
-
     /// Returns a section member `P2pNode`
     pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state
