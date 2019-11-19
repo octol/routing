@@ -361,35 +361,6 @@ impl Elder {
                 self.disconnect(p2p_node.public_id());
             }
         }
-
-        for p2p_node in change.added {
-            let pub_id = *p2p_node.public_id();
-            if !self.peer_map().has(&pub_id) {
-                self.peer_map_mut()
-                    .insert(pub_id, p2p_node.connection_info().clone());
-                self.send_direct_message(
-                    p2p_node.connection_info(),
-                    DirectMessage::ConnectionResponse,
-                );
-            };
-        }
-
-        let to_connect: Vec<_> = self
-            .chain
-            .our_elders()
-            .filter(|p2p_node| !self.peer_map().has(p2p_node.public_id()))
-            .cloned()
-            .collect();
-
-        for p2p_node in to_connect.into_iter() {
-            let pub_id = p2p_node.public_id();
-            self.peer_map_mut()
-                .insert(*pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
-            );
-        }
     }
 
     fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
@@ -659,21 +630,6 @@ impl Elder {
         let pub_id = *p2p_node.public_id();
         let dst = Authority::Node(*pub_id.name());
 
-        // Make sure we are connected to the candidate
-        if !self.peer_map().has(&pub_id) {
-            trace!(
-                "{} - Not yet connected to {} - use p2p_node.",
-                self,
-                p2p_node
-            );
-            self.peer_map_mut()
-                .insert(pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
-            );
-        };
-
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
             first_state_serialized: Default::default(),
@@ -716,15 +672,6 @@ impl Elder {
         );
 
         let pub_id = *p2p_node.public_id();
-        if !self.peer_map().has(&pub_id) {
-            log_or_panic!(
-                LogLevel::Error,
-                "Not connected to the sender of BootstrapRequest."
-            );
-            // Note: peer_map and this block is scheduled for removal
-            return Err(RoutingError::PeerNotFound(pub_id));
-        };
-
         if self.chain.is_peer_our_member(&pub_id) {
             debug!(
                 "{} - Ignoring BootstrapRequest from {} - already member of our section",
@@ -1076,29 +1023,6 @@ impl Elder {
         Ok((targets.into_iter().cloned().collect(), dg_size))
     }
 
-    // Check whether we are connected to any elders. If this node loses all elder connections,
-    // it must be restarted.
-    fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
-        if self
-            .peer_map()
-            .connected_ids()
-            .filter(|id| self.chain.our_id() != *id)
-            .any(|id| self.chain.is_peer_our_elder(id))
-        {
-            true
-        } else {
-            debug!("{} - Lost all elder connections.", self);
-
-            // Except network startup, restart in other cases.
-            if *self.chain.our_info().version() > 0 {
-                outbox.send_event(Event::RestartRequired);
-                false
-            } else {
-                true
-            }
-        }
-    }
-
     fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
         if msg.check_trust(&self.chain) {
             Ok(())
@@ -1297,10 +1221,6 @@ impl Base for Elder {
 
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
-
-        if !self.check_elder_connections(outbox) {
-            return Transition::Terminate;
-        }
 
         if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));

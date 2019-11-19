@@ -255,11 +255,9 @@ impl State {
     }
 
     pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
-        state_dispatch!(
-            self,
-            state => state.peer_map().has(name),
-            Terminated => false
-        )
+        self.chain()
+            .and_then(|chain| chain.get_p2p_node(name.as_ref()))
+            .is_some()
     }
 
     pub fn rng(&mut self) -> &mut MainRng {

@@ -134,16 +134,6 @@ impl PeerMap {
         self.forward.get(name.as_ref())
     }
 
-    // Returns an iterator over the public IDs of connected peers
-    pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.reverse.values().flatten()
-    }
-
-    // Returns `true` if we have the connection info for a given public ID
-    pub fn has<N: AsRef<XorName>>(&self, name: N) -> bool {
-        self.forward.contains_key(name.as_ref())
-    }
-
     // Inserts a new client entry
     pub fn insert_client(&mut self, peer_addr: SocketAddr) {
         let _ = self.clients.insert(peer_addr);
@@ -177,54 +167,6 @@ impl PendingConnection {
         ConnectionInfo {
             peer_addr,
             peer_cert_der: self.peer_cert_der,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{id::FullId, rng};
-    use unwrap::unwrap;
-
-    #[test]
-    fn connect_then_identify_then_disconnect() {
-        let mut rng = rng::new();
-        let mut peer_map = PeerMap::new();
-        let conn_info = connection_info("198.51.100.0:5555");
-        let pub_id = *FullId::gen(&mut rng).public_id();
-
-        assert!(peer_map.get_connection_info(&pub_id).is_none());
-
-        peer_map.connect(conn_info.clone());
-        assert!(peer_map.get_connection_info(&pub_id).is_none());
-
-        peer_map.identify(pub_id, conn_info.peer_addr);
-        assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
-
-        let outcome = peer_map.disconnect(conn_info.peer_addr);
-        assert_eq!(outcome, vec![pub_id]);
-        assert!(peer_map.get_connection_info(&pub_id).is_none());
-    }
-
-    #[test]
-    fn insert() {
-        let mut rng = rng::new();
-        let mut peer_map = PeerMap::new();
-        let conn_info = connection_info("198.51.100.0:5555");
-        let pub_id = *FullId::gen(&mut rng).public_id();
-
-        assert!(peer_map.get_connection_info(&pub_id).is_none());
-
-        peer_map.insert(pub_id, conn_info.clone());
-        assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
-    }
-
-    fn connection_info(addr: &str) -> ConnectionInfo {
-        let peer_addr: SocketAddr = unwrap!(addr.parse());
-        ConnectionInfo {
-            peer_addr,
-            peer_cert_der: vec![],
         }
     }
 }

@@ -359,15 +359,6 @@ pub trait Approved: Base {
             return Ok(());
         }
 
-        if self.peer_map().has(&their_pub_id) {
-            trace!(
-                "{} - Not sending connection request to {} - already connected.",
-                self,
-                their_pub_id
-            );
-            return Ok(());
-        }
-
         let msg_id = self.rng().gen();
         let content = MessageContent::ConnectionRequest {
             conn_info: self.our_connection_info()?,

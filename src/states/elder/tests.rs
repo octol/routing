@@ -303,10 +303,6 @@ impl ElderUnderTest {
             .elder_state_mut()
             .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name()));
     }
-
-    fn is_connected(&self, pub_id: &PublicId) -> bool {
-        self.machine.current().is_connected(pub_id)
-    }
 }
 
 fn new_elder_state(
@@ -464,7 +460,6 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
 
     // Bootstrap fails for insufficient section size.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(!elder_test.is_connected(node.public_id()));
 
     // Add new section member to reach elder_size.
     elder_test.accumulate_online(elder_test.candidate.clone());
@@ -472,5 +467,4 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
 
     // Re-bootstrap now succeeds.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(elder_test.is_connected(node.public_id()));
 }
